@@ -130,7 +130,7 @@ function getUserMediaWithConstraints(um, resolution, bandwidth, fps) {
         if (!constraints.video) constraints.video = {mandatory: {}};// same behaviour as tru;
         constraints.video.mandatory.minFrameRate = fps;
     }
- 
+
     try {
         RTC.getUserMedia(constraints,
                 function (stream) {
@@ -245,7 +245,7 @@ Strophe.addConnectionPlugin('jingle', {
             this.sessions[sess.sid] = sess;
             this.jid2session[sess.peerjid] = sess;
 
-            // the callback should either 
+            // the callback should either
             // .sendAnswer and .accept
             // or .sendTerminate -- not necessarily synchronus
             $(document).trigger('callincoming.jingle', [sess.sid]);
@@ -300,7 +300,7 @@ Strophe.addConnectionPlugin('jingle', {
         sess.ice_config = this.ice_config;
 
         sess.initiate(peerjid, true, datachannels);
-        
+
         this.sessions[sess.sid] = sess;
         this.jid2session[sess.peerjid] = sess;
         sess.sendOffer();
@@ -594,7 +594,7 @@ SDP.prototype.toJingle = function (elem, thecreator) {
             elem.up(); // end of description
             elem.c('transport', {xmlns: 'urn:xmpp:jingle:transports:ice-udp:1'});
         }else if(SDPUtil.find_line(this.media[i], 'a=sctpmap:').length){ //DataChannel
-        
+
           elem.c('description', //FIXME: Need actual application
                  {xmlns: 'urn:xmpp:example'});
           elem.up();
@@ -606,9 +606,8 @@ SDP.prototype.toJingle = function (elem, thecreator) {
                 elem.c('sctpmap', attr);
                 elem.up();
           }
-        } 
+        }
 
-        
         // XEP-0320
         var fingerprints = SDPUtil.find_lines(this.media[i], 'a=fingerprint:', this.session);
         fingerprints.forEach(function(line) {
@@ -739,14 +738,14 @@ SDP.prototype.fromJingle = function (jingle) {
     }
 
     this.session = this.raw;
-    jingle.find('>content').each(function () {		
+    jingle.find('>content').each(function () {
         var transport = $(this).find('transport'),
 			m;
 
 		if($(transport).find('>sctpmap').length){
           m = obj.jingle2sctp($(this));
         }else {
-        	m = obj.jingle2media($(this));
+            m = obj.jingle2media($(this));
 		}
         obj.media.push(m);
     });
@@ -770,7 +769,7 @@ SDP.prototype.jingle2sctp = function(content) {
   //FIXME: Needed? // +$(content.find('transport>candidate')[0]).attr('port')+
 
   media +='m=application 1 DTLS/SCTP';
-  
+
   content.find('transport>sctpmap').each(function() {
         media += ' '+$(this).attr('number');
   });
@@ -795,7 +794,7 @@ SDP.prototype.jingle2sctp = function(content) {
         console.log('add candidate');
   });
   return media;
-}
+};
 // translate a jingle content element into an an SDP media part
 SDP.prototype.jingle2media = function (content) {
     var media = '',
@@ -1453,7 +1452,7 @@ JingleSession.prototype.sendIceCandidate = function (candidate) {
         } else if (jcand.type === 'relay') {
             this.hadturncandidate = true;
         }
-        console.log(event.candidate, jcand);
+        console.log(candidate, jcand);
 
         if (this.usetrickle) {
             if (this.usedrip) {
@@ -1511,7 +1510,7 @@ JingleSession.prototype.sendIceCandidate = function (candidate) {
                         10000);
                     }, 10);
                 }
-                this.drip_container.push(event.candidate);
+                this.drip_container.push(candidate);
                 return;
             }
             // map to transport-info
@@ -1688,7 +1687,7 @@ JingleSession.prototype.setRemoteDescription = function (elem, desctype) {
         }
     }
     var remotedesc = new RTCSessionDescription({type: desctype, sdp: this.remoteSDP.raw});
-    
+
     this.peerconnection.setRemoteDescription(remotedesc,
         function () {
             console.log('setRemoteDescription success');
@@ -1886,11 +1885,11 @@ JingleSession.prototype.sendTerminate = function (reason, text) {
            sid: this.sid})
         .c('reason')
         .c(reason || 'success');
-        
+
     if (text) {
         term.up().c('text').t(text);
     }
-    
+
     this.connection.sendIQ(term,
         function () {
             obj.peerconnection.close();
@@ -1960,7 +1959,7 @@ JingleSession.prototype.getStats = function (interval) {
                         if (packetsrecv && packetslost) {
                             packetsrecv = parseInt(packetsrecv, 10);
                             packetslost = parseInt(packetslost, 10);
-                            
+
                             if (results[i].stat('googFrameRateReceived')) {
                                 lastlost.video = lost.video;
                                 lastrecv.video = recv.video;
