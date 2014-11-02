@@ -5645,6 +5645,17 @@ Strophe.PubSub.prototype = {
  */
 Strophe.Loopback = function(connection) {
     this._conn = connection;
+
+    /** PrivateFunction _bodyWrap
+     *  _Private_ helper function to wrap a stanza in a <body> tag.
+     *  This is used so Strophe can process stanzas from WebSockets like BOSH
+     */
+    this._conn._bodyWrap = function (stanza)
+    {
+        return $build('body', {
+            xmlns: Strophe.NS.HTTPBIND
+        }).cnode(stanza);
+    };
 };
 
 Strophe.Loopback.prototype = {
