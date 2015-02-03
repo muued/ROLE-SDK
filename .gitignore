@@ -3,6 +3,11 @@
 .settings/
 .classpath
 
+### IntelliJ ###
+.idea
+*.iml
+overlays/
+
 ### Java ###
 *.class
 
