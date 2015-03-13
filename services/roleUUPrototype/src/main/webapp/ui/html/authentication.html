@@ -45,40 +45,18 @@
 		<h2>Sign in using&hellip;</h2>
 		
 		<p class="messageOAuth2"></p>
-		
-		{{each $data["http://www.w3.org/2002/07/owl#sameAs"]}}
-			{{if typeof openidProviders[$value.value] !== "undefined"}}
-				{{each($i, provider) [openidProviders[$value.value]]}}
-					<a href="/o/openid/request?openid=${encodeURIComponent($value.value)}&context=${contextUriEnc}&return=${returnUriEnc}"><h3>
-						<img src="${provider.image}" width="${provider.imageWidth}" height="${provider.imageHeight}">${provider.title}</h3></a>
-				{{/each}}
-			{{/if}}
-		{{/each}}
+		<a href="/o/oauth2/request?discovery=https://api.learning-layers.eu/o/oauth2/.well-known/openid-configuration&client_id=ea77d5c0-338a-47ff-9652-cf90a5ca1799&client_secret=ANrZ2lkKmqvgjqhohTuoGuOqAkLaEOpxoZUXgTvPuD4Ett3_R7yWm9KLUrNjQHi03GI45oS3WvVWsD3T5fGYjTU"><h3>
+		<img src="https://api.learning-layers.eu/logo.png" width="15px" height="15px">Learning Layers</h3></a> 
+    	<a href="/o/oauth2/request?discovery=https://accounts.google.com/.well-known/openid-configuration&client_id=263505441471-qh264egece36h6aclabdf27cic8cl505.apps.googleusercontent.com&client_secret=wZfRO-eURr_hmeKL1F1nZFm1"><h3>
+		<img src="/s/images/googleicon.gif" width="15px" height="15px">Google</h3></a> 
+    
+    
     </script>
 
 	<div id="pageContent">
 	</div>
 	
-	<span id="signinButton">
-		  <span class="g-signin"
-			data-callback="signinCallback"
-			data-clientid="263505441471-qh264egece36h6aclabdf27cic8cl505.apps.googleusercontent.com"
-			data-cookiepolicy="single_host_origin"
-			data-requestvisibleactions="http://schemas.google.com/AddActivity"
-			data-scope="https://www.googleapis.com/auth/plus.login https://www.googleapis.com/auth/userinfo.email">
-		  </span>
-		</span>
-	
 	<script>
-		var openidProviders2 = {};
-		var openidProviders = {
-			"https://www.google.com/accounts/o8/id": {
-				title: "Google",
-				image: "/s/images/googleicon.gif",
-				imageWidth: "15",
-				imageHeight: "15"
-			}
-		};
 		var contextUri, contextUriEnc;
 		var returnUri = decodeURIComponent($.url().param("return") || "");
 		var returnUriEnc = encodeURIComponent(returnUri);
@@ -155,35 +133,6 @@
 			document.title = $("h1").text();
 		}, {});
 	</script>
-	<script type="text/javascript">
-      (function() {
-       var po = document.createElement('script'); po.type = 'text/javascript'; po.async = true;
-       po.src = 'https://apis.google.com/js/client:plusone.js';
-       var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(po, s);
-     })();
 	 
-	 function getParameterByName(name) {
-		name = name.replace(/[\[]/, "\\[").replace(/[\]]/, "\\]");
-		var regex = new RegExp("[\\?&]" + name + "=([^&#]*)"),
-			results = regex.exec(location.search);
-		return results == null ? "" : decodeURIComponent(results[1].replace(/\+/g, " "));
-	}
-	 
-	 function signinCallback(authResult) {
-	  if (authResult['access_token']) {
-		// Autorisierung erfolgreich
-		// Nach der Autorisierung des Nutzers nun die Anmeldeschaltfläche ausblenden, zum Beispiel:
-		document.getElementById('signinButton').setAttribute('style', 'display: none');
-		window.location.replace("http://cloud33.dbis.rwth-aachen.de:8073/o/oauth2/authenticate?access_token=" + authResult['access_token'] + "&return=" + getParameterByName("return"));
-	  } else if (authResult['error']) {
-		document.getElementById("messageOAuth2").innerHTML = "There was an error authenticating you. Please refresh the page and try again.";
-		// Es gab einen Fehler.
-		// Mögliche Fehlercodes:
-		//   "access_denied" – Der Nutzer hat den Zugriff für Ihre App abgelehnt.
-		//   "immediate_failed" – Automatische Anmeldung des Nutzers ist fehlgeschlagen.
-		// console.log('Es gab einen Fehler: ' + authResult['Fehler']);
-	  }
-	}
-    </script>
 </body>
 </html>

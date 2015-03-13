@@ -34,18 +34,23 @@ import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.QueryParam;
+import javax.ws.rs.CookieParam;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.NewCookie;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriInfo;
 import javax.ws.rs.core.Response.Status;
-
+import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.StringEntity;
+import javax.ws.rs.core.UriBuilder;
 import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.util.EntityUtils;
 import org.json.JSONTokener;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
@@ -103,21 +108,104 @@ public class OAuth2Endpoints {
 		return (ContempDSL) store;
 	}
 
+	
+	
+	@GET
+	@Path("request")
+	public Response getRequest(@QueryParam("discovery") String openIdUri,
+			@QueryParam("client_id") String client_id,
+			@QueryParam("client_secret") String client_secret) {
+		try {
+
+
+			String discoveryUri = openIdUri;
+
+				 
+				DefaultHttpClient httpClient = new DefaultHttpClient();
+				
+				HttpGet discovery = new HttpGet(openIdUri);
+				
+				HttpResponse response = httpClient.execute(discovery);
+				int status = response.getStatusLine().getStatusCode();
+				if(status>=200 && status < 300){
+					Object obj = JSONValue.parse(EntityUtils.toString(response.getEntity()));
+					JSONObject finalResult = (JSONObject) obj;
+					UriBuilder authorizeUriBuilder = UriBuilder.fromUri(
+							(String) finalResult.get("authorization_endpoint"));
+					authorizeUriBuilder.queryParam("scope","openid profile email");
+					authorizeUriBuilder.queryParam("client_id",client_id);
+					authorizeUriBuilder.queryParam("redirect_uri",uriInfo.getBaseUri().toString()+"o/oauth2/authorize");
+					authorizeUriBuilder.queryParam("response_type","code");
+					NewCookie userinfo = new NewCookie("userinfo_endpoint",
+							(String) finalResult.get("userinfo_endpoint"), "/", uriInfo.getBaseUri().getHost(),
+							"Current Userinfo Endpoint", -1, false);
+					NewCookie token = new NewCookie("token_endpoint",
+							(String) finalResult.get("token_endpoint"), "/", uriInfo.getBaseUri().getHost(),
+							"Current Token Endpoint", -1, false);
+					NewCookie id = new NewCookie("client_id",
+							client_id);
+					NewCookie secret = new NewCookie("client_secret",
+							client_secret);
+					
+					return Response.seeOther(authorizeUriBuilder.build()).cookie(secret).cookie(id).cookie(userinfo).cookie(token).build();
+	
+				}
+				else{
+					return Response.status(status).build();
+				}
+		} catch (Exception e) {
+			return Response.status(Status.INTERNAL_SERVER_ERROR)
+					.entity(e.getMessage()).type(MediaType.TEXT_PLAIN_TYPE)
+					.build();
+		} finally {
+			store.disconnect();
+		}
+	}
+
+	
+	@GET
+	@POST
+	@Path("authorize")
+	public Response getAccessToken(@QueryParam("code") String code,
+			@CookieParam("token_endpoint") String tokenEP,
+			@CookieParam("userinfo_endpoint") String userEP,
+			@CookieParam("client_id") String clientid,
+			@CookieParam("client_secret") String secret){
+		try{
+			HttpClient client = new DefaultHttpClient();
+			log.info(tokenEP);
+			HttpPost post = new HttpPost(tokenEP);
+			UriBuilder tokenUriBuilder = UriBuilder.fromUri (tokenEP);
+			StringEntity entity = new StringEntity("grant_type=authorization_code&client_id="+clientid+"&client_secret="+secret+"&code="+code+"&redirect_uri="+uriInfo.getBaseUri().toString()+"o/oauth2/authorize"); //+uriInfo.getBaseUri().toString()+"o/oauth2/authenticate");
+			post.setEntity(entity);
+			post.setHeader("Content-Type","application/x-www-form-urlencoded");
+			HttpResponse response = client.execute(post);
+			Object obj = JSONValue.parse(EntityUtils.toString(response.getEntity()));
+			JSONObject tokenResult = (JSONObject) obj;
+			UriBuilder authUriBuilder = UriBuilder.fromUri(uriInfo.getBaseUri());
+			authUriBuilder.path("o/oauth2/authenticate").queryParam("access_token",(String)tokenResult.get("access_token")).queryParam("userinfo_endpoint",userEP);
+			return Response.seeOther(authUriBuilder.build()).build();
+		}
+		catch(Exception e){
+			return Response.status(Status.INTERNAL_SERVER_ERROR)
+					.entity(e.getMessage()).type(MediaType.TEXT_PLAIN_TYPE)
+					.build();
+		}
+	}
+	
 	@GET
 	@POST
 	@Path("authenticate")
 	public Response getAuthentication(
 			@QueryParam("access_token") String accessToken,
-			@QueryParam("return") String localReturnUri) {
+			@QueryParam("userinfo_endpoint") String userinfo) {
 		try {
 			log.info("OAuth2 authentication in progress");
 
 			// Query Google's userinfo service for the family_name and
 			// given_name.
-
 			HttpClient client = new DefaultHttpClient();
-			HttpGet request = new HttpGet(
-					"https://www.googleapis.com/oauth2/v2/userinfo");
+			HttpGet request = new HttpGet(userinfo);
 			request.setHeader("Authorization", "Bearer " + accessToken);
 			HttpResponse response;
 			try {
@@ -131,10 +219,8 @@ public class OAuth2Endpoints {
 				for (String line = null; (line = reader.readLine()) != null;) {
 					builder.append(line).append("\n");
 				}
-
 				Object obj = JSONValue.parse(builder.toString());
 				JSONObject finalResult = (JSONObject) obj;
-
 				String firstName = (String) finalResult.get("given_name");
 				String lastName = (String) finalResult.get("family_name");
 				String email = (String) finalResult.get("email");
@@ -144,7 +230,6 @@ public class OAuth2Endpoints {
 
 				Concept user = store().in(userContext).sub().get(userName);
 				if (user == null) {
-
 					user = store().in(userContext).sub(userPredicate)
 							.create(userName);
 
@@ -158,24 +243,20 @@ public class OAuth2Endpoints {
 									.createURI("http://purl.org/dc/terms/title"),
 							valueFactory.createLiteral(firstName + " "
 									+ lastName)));
-
 					// email
 					graph.add(valueFactory.createStatement(
 							userUri,
 							valueFactory
 									.createURI("http://xmlns.com/foaf/0.1/mbox"),
 							valueFactory.createURI("mailto:" + email)));
-
 					// access_token
 					graph.add(valueFactory.createStatement(
 							userUri,
 							valueFactory
 									.createURI("http://xmlns.com/foaf/0.1/openid"),
 							valueFactory.createLiteral(accessToken)));
-
 					store().in(user).as(ConserveTerms.metadata)
 							.type("application/json").graph(graph);
-
 					requestNotifier.setResolution(
 							Resolution.StandardType.CONTEXT,
 							store.getConcept(userContext));
@@ -184,7 +265,6 @@ public class OAuth2Endpoints {
 					requestNotifier.doPost();
 
 				}
-
 				Concept session = store().in(sessionContext).sub()
 						.create(randomString());
 				store().in(session)
@@ -194,18 +274,7 @@ public class OAuth2Endpoints {
 						session.getId(), "/", uriInfo.getBaseUri().getHost(),
 						"conserve session id", 1200000, false);
 
-				URI returnUri;
-				if (localReturnUri != null) {
-					try {
-						returnUri = new URI(localReturnUri);
-					} catch (URISyntaxException e) {
-						returnUri = uriInfo.getBaseUriBuilder().build();
-					}
-				} else {
-					returnUri = uriInfo.getBaseUriBuilder().build();
-				}
-
-				return Response.seeOther(returnUri).cookie(cookie)
+				return Response.seeOther(uriInfo.getBaseUri()).cookie(cookie)
 						.header("Cache-Control", "no-store").build();
 
 			} catch (Exception e) {
