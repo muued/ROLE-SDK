@@ -208,10 +208,6 @@ public class ContextResponder extends RDFResponder {
             ClientSessionChannel channel = session.getChannel(channelId);
             channel.publish(message);
             session.disconnect();
-            if(message != null && channel != null){
-	            log.info("Bayeux message published: " + message + " to channel: "
-	                    + channel);
-            }
         }
 
         return Response.created(java.net.URI.create(ub.build().toString()))
