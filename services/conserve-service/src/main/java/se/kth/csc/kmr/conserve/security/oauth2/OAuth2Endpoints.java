@@ -114,7 +114,8 @@ public class OAuth2Endpoints {
 	@Path("request")
 	public Response getRequest(@QueryParam("discovery") String openIdUri,
 			@QueryParam("client_id") String client_id,
-			@QueryParam("client_secret") String client_secret) {
+			@QueryParam("client_secret") String client_secret,
+			@QueryParam("return") String return_url) {
 		try {
 
 
@@ -124,7 +125,6 @@ public class OAuth2Endpoints {
 				DefaultHttpClient httpClient = new DefaultHttpClient();
 				
 				HttpGet discovery = new HttpGet(openIdUri);
-				
 				HttpResponse response = httpClient.execute(discovery);
 				int status = response.getStatusLine().getStatusCode();
 				if(status>=200 && status < 300){
@@ -136,6 +136,9 @@ public class OAuth2Endpoints {
 					authorizeUriBuilder.queryParam("client_id",client_id);
 					authorizeUriBuilder.queryParam("redirect_uri",uriInfo.getBaseUri().toString()+"o/oauth2/authorize");
 					authorizeUriBuilder.queryParam("response_type","code");
+					if(return_url!=null){
+						authorizeUriBuilder.queryParam("state",return_url);
+					}
 					NewCookie userinfo = new NewCookie("userinfo_endpoint",
 							(String) finalResult.get("userinfo_endpoint"), "/", uriInfo.getBaseUri().getHost(),
 							"Current Userinfo Endpoint", -1, false);
@@ -167,123 +170,103 @@ public class OAuth2Endpoints {
 	@POST
 	@Path("authorize")
 	public Response getAccessToken(@QueryParam("code") String code,
+			@QueryParam("state") String state,
 			@CookieParam("token_endpoint") String tokenEP,
 			@CookieParam("userinfo_endpoint") String userEP,
-			@CookieParam("client_id") String clientid,
-			@CookieParam("client_secret") String secret){
+			@CookieParam("client_id") String clientId,
+			@CookieParam("client_secret") String clientSecret){
 		try{
 			HttpClient client = new DefaultHttpClient();
 			log.info(tokenEP);
 			HttpPost post = new HttpPost(tokenEP);
 			UriBuilder tokenUriBuilder = UriBuilder.fromUri (tokenEP);
-			StringEntity entity = new StringEntity("grant_type=authorization_code&client_id="+clientid+"&client_secret="+secret+"&code="+code+"&redirect_uri="+uriInfo.getBaseUri().toString()+"o/oauth2/authorize"); //+uriInfo.getBaseUri().toString()+"o/oauth2/authenticate");
+			StringEntity entity = new StringEntity("grant_type=authorization_code&client_id="+clientId+"&client_secret="+clientSecret+"&code="+code+"&redirect_uri="+uriInfo.getBaseUri().toString()+"o/oauth2/authorize"); //+uriInfo.getBaseUri().toString()+"o/oauth2/authenticate");
 			post.setEntity(entity);
 			post.setHeader("Content-Type","application/x-www-form-urlencoded");
 			HttpResponse response = client.execute(post);
 			Object obj = JSONValue.parse(EntityUtils.toString(response.getEntity()));
 			JSONObject tokenResult = (JSONObject) obj;
-			UriBuilder authUriBuilder = UriBuilder.fromUri(uriInfo.getBaseUri());
-			authUriBuilder.path("o/oauth2/authenticate").queryParam("access_token",(String)tokenResult.get("access_token")).queryParam("userinfo_endpoint",userEP);
-			return Response.seeOther(authUriBuilder.build()).build();
+			String accessToken = (String) tokenResult.get("access_token");
+			HttpGet userinfoRequest = new HttpGet(userEP);
+			userinfoRequest.setHeader("Authorization", "Bearer " + accessToken);
+			HttpResponse userinfoResponse;
+			userinfoResponse = client.execute(userinfoRequest);
+			Object userinfoObj = JSONValue.parse(EntityUtils.toString(userinfoResponse.getEntity()));
+			JSONObject finalResult = (JSONObject) userinfoObj;
+			String firstName = (String) finalResult.get("given_name");
+			String lastName = (String) finalResult.get("family_name");
+			String email = (String) finalResult.get("email");
+			String userName = "mailto:" + email;
+
+			Concept user = store().in(userContext).sub().get(userName);
+			if (user == null) {
+				user = store().in(userContext).sub(userPredicate)
+						.create(userName);
+
+				Graph graph = new GraphImpl();
+				ValueFactory valueFactory = graph.getValueFactory();
+				org.openrdf.model.URI userUri = valueFactory
+						.createURI(store().in(user).uri().toString());
+				graph.add(valueFactory.createStatement(
+						userUri,
+						valueFactory
+								.createURI("http://purl.org/dc/terms/title"),
+						valueFactory.createLiteral(firstName + " "
+								+ lastName)));
+				// email
+				graph.add(valueFactory.createStatement(
+						userUri,
+						valueFactory
+								.createURI("http://xmlns.com/foaf/0.1/mbox"),
+						valueFactory.createURI("mailto:" + email)));
+				// access_token
+				graph.add(valueFactory.createStatement(
+						userUri,
+						valueFactory
+								.createURI("http://xmlns.com/foaf/0.1/openid"),
+						valueFactory.createLiteral(accessToken)));
+				store().in(user).as(ConserveTerms.metadata)
+						.type("application/json").graph(graph);
+				requestNotifier.setResolution(
+						Resolution.StandardType.CONTEXT,
+						store.getConcept(userContext));
+				requestNotifier.setResolution(
+						Resolution.StandardType.CREATED, user);
+				requestNotifier.doPost();
+
+			}
+			Concept session = store().in(sessionContext).sub()
+					.create(randomString());
+			store().in(session)
+					.put(ConserveTerms.reference, user.getUuid());
+
+			NewCookie cookie = new NewCookie("conserve_session",
+					session.getId(), "/", uriInfo.getBaseUri().getHost(),
+					"conserve session id", 1200000, false);
+			NewCookie userinfo = new NewCookie("userinfo_endpoint",
+					(String) finalResult.get("userinfo_endpoint"), "/", uriInfo.getBaseUri().getHost(),
+					"Current Userinfo Endpoint", 0, false);
+			NewCookie token = new NewCookie("token_endpoint",
+					(String) finalResult.get("token_endpoint"), "/", uriInfo.getBaseUri().getHost(),
+					"Current Token Endpoint", 0, false);
+			NewCookie id = new NewCookie("client_id",
+					"","/",uriInfo.getBaseUri().getHost(),"",0,false);
+			NewCookie secret = new NewCookie("client_secret",
+					"","/",uriInfo.getBaseUri().getHost(),"",0,false);
+			
+			UriBuilder spacereturn = UriBuilder.fromUri(uriInfo.getBaseUri().toString());
+			if(state != null){
+				spacereturn.path(state);
+			}
+			return Response.seeOther(spacereturn.build()).cookie(cookie)
+					.header("Cache-Control", "no-store").build();
 		}
 		catch(Exception e){
 			return Response.status(Status.INTERNAL_SERVER_ERROR)
 					.entity(e.getMessage()).type(MediaType.TEXT_PLAIN_TYPE)
 					.build();
 		}
-	}
-	
-	@GET
-	@POST
-	@Path("authenticate")
-	public Response getAuthentication(
-			@QueryParam("access_token") String accessToken,
-			@QueryParam("userinfo_endpoint") String userinfo) {
-		try {
-			log.info("OAuth2 authentication in progress");
-
-			// Query Google's userinfo service for the family_name and
-			// given_name.
-			HttpClient client = new DefaultHttpClient();
-			HttpGet request = new HttpGet(userinfo);
-			request.setHeader("Authorization", "Bearer " + accessToken);
-			HttpResponse response;
-			try {
-				response = client.execute(request);
-
-				// Get the response
-				BufferedReader reader = new BufferedReader(
-						new InputStreamReader(
-								response.getEntity().getContent(), "UTF-8"));
-				StringBuilder builder = new StringBuilder();
-				for (String line = null; (line = reader.readLine()) != null;) {
-					builder.append(line).append("\n");
-				}
-				Object obj = JSONValue.parse(builder.toString());
-				JSONObject finalResult = (JSONObject) obj;
-				String firstName = (String) finalResult.get("given_name");
-				String lastName = (String) finalResult.get("family_name");
-				String email = (String) finalResult.get("email");
-
-				// String userName = verified.getIdentifier();
-				String userName = "mailto:" + email;
-
-				Concept user = store().in(userContext).sub().get(userName);
-				if (user == null) {
-					user = store().in(userContext).sub(userPredicate)
-							.create(userName);
-
-					Graph graph = new GraphImpl();
-					ValueFactory valueFactory = graph.getValueFactory();
-					org.openrdf.model.URI userUri = valueFactory
-							.createURI(store().in(user).uri().toString());
-					graph.add(valueFactory.createStatement(
-							userUri,
-							valueFactory
-									.createURI("http://purl.org/dc/terms/title"),
-							valueFactory.createLiteral(firstName + " "
-									+ lastName)));
-					// email
-					graph.add(valueFactory.createStatement(
-							userUri,
-							valueFactory
-									.createURI("http://xmlns.com/foaf/0.1/mbox"),
-							valueFactory.createURI("mailto:" + email)));
-					// access_token
-					graph.add(valueFactory.createStatement(
-							userUri,
-							valueFactory
-									.createURI("http://xmlns.com/foaf/0.1/openid"),
-							valueFactory.createLiteral(accessToken)));
-					store().in(user).as(ConserveTerms.metadata)
-							.type("application/json").graph(graph);
-					requestNotifier.setResolution(
-							Resolution.StandardType.CONTEXT,
-							store.getConcept(userContext));
-					requestNotifier.setResolution(
-							Resolution.StandardType.CREATED, user);
-					requestNotifier.doPost();
-
-				}
-				Concept session = store().in(sessionContext).sub()
-						.create(randomString());
-				store().in(session)
-						.put(ConserveTerms.reference, user.getUuid());
-
-				NewCookie cookie = new NewCookie("conserve_session",
-						session.getId(), "/", uriInfo.getBaseUri().getHost(),
-						"conserve session id", 1200000, false);
-
-				return Response.seeOther(uriInfo.getBaseUri()).cookie(cookie)
-						.header("Cache-Control", "no-store").build();
-
-			} catch (Exception e) {
-				return Response.status(Status.INTERNAL_SERVER_ERROR)
-						.entity(e.getMessage()).type(MediaType.TEXT_PLAIN_TYPE)
-						.build();
-			}
-
-		} finally {
+		finally{
 			store.disconnect();
 		}
 	}
