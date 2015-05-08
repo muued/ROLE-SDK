@@ -120,6 +120,9 @@ public class OAuth2Endpoints {
 	private TemplateManager templates;
 
 	private static final SecureRandom RAND = new SecureRandom();
+	
+	private static final String REGDATA = "{'redirect_uris':['http://role-sandbox.eu/o/oauth2/authorize'],'client_name':'ROLE-SDK',"
+											+"'response_types':['code'],'grant_types':['authorization_code']}";
 
 	private ContempDSL store() {
 		return (ContempDSL) store;
@@ -277,7 +280,7 @@ public class OAuth2Endpoints {
 	public Response getProvider(){
 		try{
 			List<Concept> concepts = store()
-				.in(userContext)
+				.in(oidcContext)
 				.sub()
 				.list();
 			int count=0;
@@ -328,6 +331,7 @@ public class OAuth2Endpoints {
 			String name;
 			String clientId;
 			String clientSecret;
+			boolean dynreg;
 			if(obj == null || obj.get("config") == null || obj.get("name") == null){
 				return Response.status(Status.BAD_REQUEST).build();
 			}
@@ -335,6 +339,7 @@ public class OAuth2Endpoints {
 			name = (String) obj.get("name");
 			clientId = (String) obj.get("client_id");
 			clientSecret = (String) obj.get("client_secret");
+			dynreg = Boolean.parseBoolean((String) obj.get("dynreg"));
 			Concept provider = store().in(oidcContext).sub(oidcPredicate).get(config);
 			if(provider == null){
 				provider = store().in(oidcContext).sub(oidcPredicate)
@@ -375,6 +380,25 @@ public class OAuth2Endpoints {
 						Resolution.StandardType.CREATED, provider);
 				requestNotifier.doPost();
 			}else{
+				
+				List<Content> tmp=store.getContents(provider.getUuid());
+				Content content = tmp.get(0);
+				
+				Blob asdf = content.getData();
+				byte[] bdata = asdf.getBytes(1, (int) asdf.length());
+				String z = new String(bdata);
+				JSONObject buffer = (JSONObject) JSONValue.parse(z);
+				
+				if(buffer.get("http://purl.org/openapp/app") == null){
+					JSONObject response = attemptDynRegistration((String) buffer.get("http://purl.org/openapp/configuration"));
+					int status = Integer.parseInt((String) response.get("status_code"));
+					if(status == 200 || status == 201){
+//						store().in(provider).put("http://purl.org/openapp/app",(String) response.get("client_id"));
+//						store().in(provider).put("http://purl.org/openapp/secret", (String) response.get("client_secret"));
+					}
+				}
+				
+				
 				return Response.status(Status.CONFLICT).build();
 			}
 			return Response.ok().build();
@@ -385,7 +409,29 @@ public class OAuth2Endpoints {
 					.build();
 		}
 	}
-
+	
+	@POST
+	@Path("dynreg")
+	public JSONObject attemptDynRegistration(String uri){
+		try{
+			HttpClient client = new DefaultHttpClient();
+			HttpPost post = new HttpPost(uri);
+			post.setHeader("Content-Type","application/json");
+			post.setHeader("Accept","application/json");
+			StringEntity data = new StringEntity(REGDATA);
+			post.setEntity(data);
+			HttpResponse response = client.execute(post);
+			Object obj = JSONValue.parse(EntityUtils.toString(response.getEntity()));
+			JSONObject regResult = (JSONObject) obj;
+			int status = response.getStatusLine().getStatusCode();
+			regResult.put("status_code",status);
+			return regResult;
+		}
+		catch(Exception e){
+			e.printStackTrace();
+			return null;
+		}
+	}
 
 	private static String randomString() {
 		byte[] secret = new byte[16];
