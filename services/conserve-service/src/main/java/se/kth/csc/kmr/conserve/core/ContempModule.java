@@ -85,6 +85,18 @@ public class ContempModule extends AbstractModule {
 						Names.named("conserve.oauth.access.token.context"))
 				.toInstance(
 						UUID.fromString("07611a99-22a9-4115-b75b-a96be5182b97"));
+		
+		binder().bind(UUID.class)
+				.annotatedWith(
+						Names.named("conserve.oidc.context"))
+				.toInstance(
+						UUID.fromString("911a07a5-f5dd-403d-9b74-0d4921c19fda"));
+		
+		binder().bind(UUID.class)
+				.annotatedWith(
+						Names.named("conserve.oidc.predicate"))
+				.toInstance(
+						UUID.fromString("6bae17cc-4e6c-496d-ab3d-c6a5f009ee6e"));
 
 		Contapp.newResponderBinder(binder());
 		Contapp.newGuardBinder(binder());

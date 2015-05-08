@@ -26,6 +26,9 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.security.SecureRandom;
 import java.util.UUID;
+import java.util.List;
+import java.sql.Blob;
+
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -40,6 +43,7 @@ import javax.ws.rs.core.NewCookie;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriInfo;
 import javax.ws.rs.core.Response.Status;
+import  javax.ws.rs.core.Context;
 import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.http.HttpResponse;
@@ -54,6 +58,7 @@ import org.apache.http.util.EntityUtils;
 import org.json.JSONTokener;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
+import org.json.simple.JSONArray;
 import org.openrdf.model.Graph;
 import org.openrdf.model.ValueFactory;
 import org.openrdf.model.impl.GraphImpl;
@@ -61,12 +66,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import se.kth.csc.kmr.conserve.Concept;
+import se.kth.csc.kmr.conserve.Content;
 import se.kth.csc.kmr.conserve.Contemp;
 import se.kth.csc.kmr.conserve.Resolution;
 import se.kth.csc.kmr.conserve.core.ConserveTerms;
 import se.kth.csc.kmr.conserve.dsl.ContempDSL;
 import se.kth.csc.kmr.conserve.iface.internal.RequestNotifier;
 import se.kth.csc.kmr.conserve.util.TemplateManager;
+
+import com.google.common.io.CharStreams;
+
 
 @Path("/o/oauth2")
 public class OAuth2Endpoints {
@@ -85,6 +94,14 @@ public class OAuth2Endpoints {
 	@Inject
 	@Named("conserve.user.predicate")
 	private UUID userPredicate;
+	
+	@Inject
+	@Named("conserve.oidc.context")
+	private UUID oidcContext;
+	
+	@Inject
+	@Named("conserve.oidc.predicate")
+	private UUID oidcPredicate;
 
 	@javax.ws.rs.core.Context
 	private UriInfo uriInfo;
@@ -136,21 +153,16 @@ public class OAuth2Endpoints {
 					authorizeUriBuilder.queryParam("client_id",client_id);
 					authorizeUriBuilder.queryParam("redirect_uri",uriInfo.getBaseUri().toString()+"o/oauth2/authorize");
 					authorizeUriBuilder.queryParam("response_type","code");
+					JSONObject state = new JSONObject();
+					state.put("userinfo_endpoint", (String) finalResult.get("userinfo_endpoint"));
+					state.put("token_endpoint", (String) finalResult.get("token_endpoint"));
+					state.put("client_id",client_id);
+					state.put("client_secret",client_secret);
 					if(return_url!=null){
-						authorizeUriBuilder.queryParam("state",return_url);
+						state.put("return_url",return_url);
 					}
-					NewCookie userinfo = new NewCookie("userinfo_endpoint",
-							(String) finalResult.get("userinfo_endpoint"), "/", uriInfo.getBaseUri().getHost(),
-							"Current Userinfo Endpoint", -1, false);
-					NewCookie token = new NewCookie("token_endpoint",
-							(String) finalResult.get("token_endpoint"), "/", uriInfo.getBaseUri().getHost(),
-							"Current Token Endpoint", -1, false);
-					NewCookie id = new NewCookie("client_id",
-							client_id);
-					NewCookie secret = new NewCookie("client_secret",
-							client_secret);
-					
-					return Response.seeOther(authorizeUriBuilder.build()).cookie(secret).cookie(id).cookie(userinfo).cookie(token).build();
+					authorizeUriBuilder.queryParam("state",Base64.encodeBase64String(state.toString().getBytes()));
+					return Response.seeOther(authorizeUriBuilder.build()).build();
 	
 				}
 				else{
@@ -170,14 +182,15 @@ public class OAuth2Endpoints {
 	@POST
 	@Path("authorize")
 	public Response getAccessToken(@QueryParam("code") String code,
-			@QueryParam("state") String state,
-			@CookieParam("token_endpoint") String tokenEP,
-			@CookieParam("userinfo_endpoint") String userEP,
-			@CookieParam("client_id") String clientId,
-			@CookieParam("client_secret") String clientSecret){
+			@QueryParam("state") String state){
 		try{
+			Object stateRep = JSONValue.parse (new String(Base64.decodeBase64(state)));
+			JSONObject stateObj = (JSONObject) stateRep;
+			String userEP = (String) stateObj.get("userinfo_endpoint");
+			String tokenEP = (String) stateObj.get("token_endpoint");
+			String clientId = (String) stateObj.get("client_id");
+			String clientSecret = (String) stateObj.get("client_secret"); 
 			HttpClient client = new DefaultHttpClient();
-			log.info(tokenEP);
 			HttpPost post = new HttpPost(tokenEP);
 			UriBuilder tokenUriBuilder = UriBuilder.fromUri (tokenEP);
 			StringEntity entity = new StringEntity("grant_type=authorization_code&client_id="+clientId+"&client_secret="+clientSecret+"&code="+code+"&redirect_uri="+uriInfo.getBaseUri().toString()+"o/oauth2/authorize"); //+uriInfo.getBaseUri().toString()+"o/oauth2/authenticate");
@@ -239,24 +252,12 @@ public class OAuth2Endpoints {
 					.create(randomString());
 			store().in(session)
 					.put(ConserveTerms.reference, user.getUuid());
-
 			NewCookie cookie = new NewCookie("conserve_session",
 					session.getId(), "/", uriInfo.getBaseUri().getHost(),
 					"conserve session id", 1200000, false);
-			NewCookie userinfo = new NewCookie("userinfo_endpoint",
-					(String) finalResult.get("userinfo_endpoint"), "/", uriInfo.getBaseUri().getHost(),
-					"Current Userinfo Endpoint", 0, false);
-			NewCookie token = new NewCookie("token_endpoint",
-					(String) finalResult.get("token_endpoint"), "/", uriInfo.getBaseUri().getHost(),
-					"Current Token Endpoint", 0, false);
-			NewCookie id = new NewCookie("client_id",
-					"","/",uriInfo.getBaseUri().getHost(),"",0,false);
-			NewCookie secret = new NewCookie("client_secret",
-					"","/",uriInfo.getBaseUri().getHost(),"",0,false);
-			
 			UriBuilder spacereturn = UriBuilder.fromUri(uriInfo.getBaseUri().toString());
-			if(state != null){
-				spacereturn.path(state);
+			if(stateObj.get("return_url") != null){
+				spacereturn.path((String) stateObj.get("return_url"));
 			}
 			return Response.seeOther(spacereturn.build()).cookie(cookie)
 					.header("Cache-Control", "no-store").build();
@@ -270,6 +271,121 @@ public class OAuth2Endpoints {
 			store.disconnect();
 		}
 	}
+	
+	@GET
+	@Path("provider")
+	public Response getProvider(){
+		try{
+			List<Concept> concepts = store()
+				.in(userContext)
+				.sub()
+				.list();
+			int count=0;
+			JSONObject obj = new JSONObject();
+			for(Concept s : concepts){
+				List<Content> contents = store.getContents(s.getUuid());
+				for(Content x : contents){
+					if(x.getType()=="application/json"){
+						Blob asdf = x.getData();
+						byte[] bdata = asdf.getBytes(1, (int) asdf.length());
+						String z = new String(bdata);
+						log.info(z);
+						JSONObject buffer = (JSONObject) JSONValue.parse(z);
+						if(buffer.get("") != null){
+							JSONObject tmp = (JSONObject) buffer.get("");
+							JSONArray tmp2 = (JSONArray) tmp.get("http://purl.org/dc/terms/title");
+							tmp = (JSONObject) tmp2.get(0);
+							if(buffer != null) obj.put((String)  tmp.get("value"),
+									buffer.get(""));
+						}
+					}
+				}
+			}
+		return Response.ok().type("application/json").entity(obj.toString()).build();
+		}catch(Exception e){
+			e.printStackTrace();
+			return Response.status(Status.INTERNAL_SERVER_ERROR)
+					.entity(e.getMessage()).type(MediaType.TEXT_PLAIN_TYPE)
+					.build();
+		}
+		
+	}
+	
+	@POST
+	@Path("provider")
+	public Response createProvider(@Context HttpServletRequest request){
+		try{
+			JSONObject obj;
+			String data;
+			if ("POST".equalsIgnoreCase(request.getMethod())) {
+				data = CharStreams.toString(request.getReader());
+			}
+			else{
+				return Response.notModified().build();
+			}
+			obj = (JSONObject) JSONValue.parse(data);
+			String config;
+			String name;
+			String clientId;
+			String clientSecret;
+			if(obj == null || obj.get("config") == null || obj.get("name") == null){
+				return Response.status(Status.BAD_REQUEST).build();
+			}
+			config = (String) obj.get("config");
+			name = (String) obj.get("name");
+			clientId = (String) obj.get("client_id");
+			clientSecret = (String) obj.get("client_secret");
+			Concept provider = store().in(oidcContext).sub(oidcPredicate).get(config);
+			if(provider == null){
+				provider = store().in(oidcContext).sub(oidcPredicate)
+						.create(config);
+				Graph graph = new GraphImpl();
+				ValueFactory valueFactory = graph.getValueFactory();
+				org.openrdf.model.URI providerUri = valueFactory
+						.createURI(store()
+								.in(provider)
+								.uri()
+								.toString());
+				graph.add(valueFactory.createStatement(
+						providerUri,
+						valueFactory
+								.createURI("http://purl.org/dc/terms/title"),
+						valueFactory.createLiteral(name)));
+				graph.add(valueFactory.createStatement(
+						providerUri,
+						valueFactory
+								.createURI("http://purl.org/openapp/configuration"),
+						valueFactory.createLiteral(config)));
+				graph.add(valueFactory.createStatement(
+						providerUri,
+						valueFactory
+								.createURI("http://purl.org/openapp/app"),
+						valueFactory.createLiteral(clientId)));
+				graph.add(valueFactory.createStatement(
+						providerUri,
+						valueFactory
+								.createURI("http://purl.org/openapp/secret"),
+						valueFactory.createLiteral(clientSecret)));
+				store().in(provider).as(ConserveTerms.metadata)
+						.type("application/json").graph(graph);
+				requestNotifier.setResolution(
+						Resolution.StandardType.CONTEXT,
+						store.getConcept(userContext));
+				requestNotifier.setResolution(
+						Resolution.StandardType.CREATED, provider);
+				requestNotifier.doPost();
+			}else{
+				return Response.status(Status.CONFLICT).build();
+			}
+			return Response.ok().build();
+		}catch(Exception e){
+			e.printStackTrace();
+			return Response.status(Status.INTERNAL_SERVER_ERROR)
+					.entity(e.getMessage()).type(MediaType.TEXT_PLAIN_TYPE)
+					.build();
+		}
+	}
+
 
 	private static String randomString() {
 		byte[] secret = new byte[16];
