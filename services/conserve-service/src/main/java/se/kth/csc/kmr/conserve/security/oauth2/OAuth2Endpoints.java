@@ -281,11 +281,12 @@ public class OAuth2Endpoints {
 		try{
 			List<Concept> concepts = store()
 				.in(oidcContext)
-				.sub()
+				.sub(oidcPredicate)
 				.list();
 			int count=0;
-			JSONObject obj = new JSONObject();
+			JSONArray arr = new JSONArray();
 			for(Concept s : concepts){
+				JSONObject obj = new JSONObject();
 				List<Content> contents = store.getContents(s.getUuid());
 				for(Content x : contents){
 					if(x.getType()=="application/json"){
@@ -296,15 +297,20 @@ public class OAuth2Endpoints {
 						JSONObject buffer = (JSONObject) JSONValue.parse(z);
 						if(buffer.get("") != null){
 							JSONObject tmp = (JSONObject) buffer.get("");
-							JSONArray tmp2 = (JSONArray) tmp.get("http://purl.org/dc/terms/title");
-							tmp = (JSONObject) tmp2.get(0);
-							if(buffer != null) obj.put((String)  tmp.get("value"),
-									buffer.get(""));
+							JSONArray config = (JSONArray) tmp.get("http://purl.org/openapp/configuration");
+							JSONArray title = (JSONArray) tmp.get("http://purl.org/dc/terms/title");
+							tmp = (JSONObject) config.get(0);
+							String abc = (String) tmp.get("value");
+							obj.put("config",abc);
+							tmp = (JSONObject) title.get(0);
+							abc = (String) tmp.get("value");
+							obj.put("title",abc);
 						}
 					}
 				}
+				arr.add(obj);
 			}
-		return Response.ok().type("application/json").entity(obj.toString()).build();
+		return Response.ok().type("application/json").entity(arr.toString()).build();
 		}catch(Exception e){
 			e.printStackTrace();
 			return Response.status(Status.INTERNAL_SERVER_ERROR)
@@ -331,6 +337,7 @@ public class OAuth2Endpoints {
 			String name;
 			String clientId;
 			String clientSecret;
+			String dynon;
 			boolean dynreg;
 			if(obj == null || obj.get("config") == null || obj.get("name") == null){
 				return Response.status(Status.BAD_REQUEST).build();
@@ -339,7 +346,27 @@ public class OAuth2Endpoints {
 			name = (String) obj.get("name");
 			clientId = (String) obj.get("client_id");
 			clientSecret = (String) obj.get("client_secret");
-			dynreg = Boolean.parseBoolean((String) obj.get("dynreg"));
+			dynon = (String) obj.get("dynreg");
+			
+			if(dynon.equals("on")) dynreg = true;
+			else	dynreg = false;
+			
+			JSONObject dynRegData;
+			if(dynreg == true){
+				HttpClient client = new DefaultHttpClient();
+				HttpGet getReq = new HttpGet(config);
+				HttpResponse response = client.execute(getReq);
+				Object conf = JSONValue.parse(EntityUtils.toString(response.getEntity()));
+				JSONObject finConf = (JSONObject) conf;
+				String uri = (String) finConf.get("registration_endpoint");
+				dynRegData = attemptDynRegistration(uri);
+				if(dynRegData == null){
+					return Response.serverError().build();
+				}
+				clientId = (String) dynRegData.get("client_id");
+				clientSecret = (String) dynRegData.get("client_secret");
+			}
+			
 			Concept provider = store().in(oidcContext).sub(oidcPredicate).get(config);
 			if(provider == null){
 				provider = store().in(oidcContext).sub(oidcPredicate)
@@ -351,6 +378,7 @@ public class OAuth2Endpoints {
 								.in(provider)
 								.uri()
 								.toString());
+				
 				graph.add(valueFactory.createStatement(
 						providerUri,
 						valueFactory
@@ -361,6 +389,7 @@ public class OAuth2Endpoints {
 						valueFactory
 								.createURI("http://purl.org/openapp/configuration"),
 						valueFactory.createLiteral(config)));
+
 				graph.add(valueFactory.createStatement(
 						providerUri,
 						valueFactory
@@ -379,26 +408,7 @@ public class OAuth2Endpoints {
 				requestNotifier.setResolution(
 						Resolution.StandardType.CREATED, provider);
 				requestNotifier.doPost();
-			}else{
-				
-				List<Content> tmp=store.getContents(provider.getUuid());
-				Content content = tmp.get(0);
-				
-				Blob asdf = content.getData();
-				byte[] bdata = asdf.getBytes(1, (int) asdf.length());
-				String z = new String(bdata);
-				JSONObject buffer = (JSONObject) JSONValue.parse(z);
-				
-				if(buffer.get("http://purl.org/openapp/app") == null){
-					JSONObject response = attemptDynRegistration((String) buffer.get("http://purl.org/openapp/configuration"));
-					int status = Integer.parseInt((String) response.get("status_code"));
-					if(status == 200 || status == 201){
-//						store().in(provider).put("http://purl.org/openapp/app",(String) response.get("client_id"));
-//						store().in(provider).put("http://purl.org/openapp/secret", (String) response.get("client_secret"));
-					}
-				}
-				
-				
+			}else{	
 				return Response.status(Status.CONFLICT).build();
 			}
 			return Response.ok().build();
@@ -410,8 +420,7 @@ public class OAuth2Endpoints {
 		}
 	}
 	
-	@POST
-	@Path("dynreg")
+
 	public JSONObject attemptDynRegistration(String uri){
 		try{
 			HttpClient client = new DefaultHttpClient();
@@ -423,6 +432,8 @@ public class OAuth2Endpoints {
 			HttpResponse response = client.execute(post);
 			Object obj = JSONValue.parse(EntityUtils.toString(response.getEntity()));
 			JSONObject regResult = (JSONObject) obj;
+			log.info((String) regResult.get("client_id"));
+			log.info((String) regResult.get("client_secret"));
 			int status = response.getStatusLine().getStatusCode();
 			regResult.put("status_code",status);
 			return regResult;

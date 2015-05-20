@@ -162,6 +162,8 @@ public final class ConserveTerms extends Terms {
 
 	public static final UUID app = INSTANCE.uuid("http://purl.org/openapp/app");
 
+	public static final UUID provider = INSTANCE.uuid("http://openid.net");
+	
 	public ConserveTerms() {
 		super(INSTANCE);
 	}
