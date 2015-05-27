@@ -133,32 +133,32 @@ public class OAuth2Endpoints {
 	@GET
 	@Path("request")
 	public Response getRequest(@QueryParam("discovery") String openIdUri,
+			@QueryParam("client_id") String client_id,
+			@QueryParam("client_secret") String client_secret,
 			@QueryParam("return") String return_url) {
 		try {
 
 
 			String discoveryUri = openIdUri;
-
-				String client_id = "";
-				String client_secret = "";
 				DefaultHttpClient httpClient = new DefaultHttpClient();
 				Concept provider = store().in(oidcContext).sub(oidcPredicate).get(openIdUri);
-				if(provider == null) return Response.status(404).build();
-				List<Content> contents = store.getContents(provider.getUuid());
-				for(Content x : contents){
-					if(x.getType()=="application/json"){
-						Blob asdf = x.getData();
-						byte[] bdata = asdf.getBytes(1, (int) asdf.length());
-						String z = new String(bdata);
-						JSONObject buffer = (JSONObject) JSONValue.parse(z);
-						if(buffer.get("") != null){
-							JSONObject tmp = (JSONObject) buffer.get("");
-							JSONArray secret = (JSONArray) tmp.get("http://purl.org/openapp/secret");
-							JSONArray id = (JSONArray) tmp.get("http://purl.org/openapp/app");
-							tmp = (JSONObject) secret.get(0);
-							client_secret = (String) tmp.get("value");
-							tmp = (JSONObject) id.get(0);
-							client_id = (String) tmp.get("value");
+				if(provider != null && client_secret == null && client_id == null){
+					List<Content> contents = store.getContents(provider.getUuid());
+					for(Content x : contents){
+						if(x.getType()=="application/json"){
+							Blob asdf = x.getData();
+							byte[] bdata = asdf.getBytes(1, (int) asdf.length());
+							String z = new String(bdata);
+							JSONObject buffer = (JSONObject) JSONValue.parse(z);
+							if(buffer.get("") != null){
+								JSONObject tmp = (JSONObject) buffer.get("");
+								JSONArray secret = (JSONArray) tmp.get("http://purl.org/openapp/secret");
+								JSONArray id = (JSONArray) tmp.get("http://purl.org/openapp/app");
+								tmp = (JSONObject) secret.get(0);
+								client_secret = (String) tmp.get("value");
+								tmp = (JSONObject) id.get(0);
+								client_id = (String) tmp.get("value");
+							}
 						}
 					}
 				}
@@ -355,23 +355,35 @@ public class OAuth2Endpoints {
 			}
 			log.info(data);
 			obj = (JSONObject) JSONValue.parse(data);
-			String config;
-			String name;
-			String clientId;
-			String clientSecret;
-			String dynon;
+			String config = "";
+			String name = "";
+			String clientId = "";
+			String clientSecret = "";
+			String dynon = "";
 			boolean dynreg;
-			if(obj == null || obj.get("config") == null || obj.get("name") == null){
+			if((obj == null || obj.get("config") == null || obj.get("name") == null)){
 				return Response.status(Status.BAD_REQUEST).build();
 			}
 			config = (String) obj.get("config");
 			name = (String) obj.get("name");
-			clientId = (String) obj.get("client_id");
-			clientSecret = (String) obj.get("client_secret");
-			dynon = (String) obj.get("dynreg");
+			
+			if(obj.get("dynreg")!=null) dynon = (String) obj.get("dynreg");
 			
 			if(dynon.equals("on")) dynreg = true;
 			else	dynreg = false;
+			
+			if(dynreg == false){
+				if(obj.get("client_id")!=null){
+					clientId = (String) obj.get("client_id");
+				}else{
+					return Response.status(Status.BAD_REQUEST).build();
+				}
+				if(obj.get("client_secret")!=null){
+					clientSecret = (String) obj.get("client_secret");
+				}else{
+					return Response.status(Status.BAD_REQUEST).build();
+				}
+			}
 			
 			JSONObject dynRegData;
 			if(dynreg == true){

@@ -8,7 +8,6 @@
 <script src="/s/script/vendor/jquery.js"></script>
 <script src="/s/script/vendor/jquery.tmpl.js"></script>
 <script src="/s/script/vendor/jquery.url.norequirejs.js" type="text/javascript"></script>
-<script src="/s/script/oidc.js"></script>
 </head>
 <body>
 	<script id="signInTemplate" type="text/x-jquery-tmpl">
@@ -48,11 +47,11 @@
     	<a href="/o/oauth2/request?discovery=https://accounts.google.com/.well-known/openid-configuration&client_id=263505441471-qh264egece36h6aclabdf27cic8cl505.apps.googleusercontent.com&client_secret=wZfRO-eURr_hmeKL1F1nZFm1&return=${returnUriEnc}"><h3>
 		<img src="/s/images/googleicon.png" width="15px" height="15px">Google</h3></a> 
 		
-		<div>
+		<div id="selectdiv">
 		<select id="oidcselect">
 			<option> Loading provider ... </option>
 		</select>
-		<button> Go </button>
+		<button id="gobutton"> Go </button>
 		</div>
 		<div>
 		<br>
@@ -156,63 +155,64 @@
 			}
 			document.title = $("h1").text();
 		}, {});
-			function getProviders(){
-				$.ajax({
-					method:"GET",
-					url:"/o/oauth2/provider/",
-					statusCode: {
-						404: function(){
-								$("#oidcselect").html("<option> Failed to load Provider data </option>");
-							},
-						200: function(data){
-								console.log(data);
-								var string="";
-								$.each(data.providers,function(i){
-									string += '<option value="'+data[i].config+'">'+data[i].name+'</option>'
-								});
-								$("#oidcselect").html(string);
-							}
-						}
-					});
-				}
-			(function($){
-				$.fn.serializeObject = function()
-				{
-				    var o = {};
-				    var a = this.serializeArray();
-				    $.each(a, function() {
-				        if (o[this.name] !== undefined) {
-				            if (!o[this.name].push) {
-				                o[this.name] = [o[this.name]];
-				            }
-				            o[this.name].push(this.value || '');
-				        } else {
-				            o[this.name] = this.value || '';
-				        }
-				    });
-				    return o;
-				};
-			})(jQuery);
 			
-			function postProvider(){
-				var postData = $("#oidcform").serializeObject();
-				$.ajax({
-					type:"POST",
-					url:"/o/oauth2/provider/",
-					statusCode: {
-						409: function(data){
-								$("#oidcwarning").html("The provider already exists as "+data.name+".");
-							},
-						201: function(data){
-								$("#oidcinfo").html("Provider added successfully");
-							}
-					},
-					dataType:"json",
-					data: postData
+	</script>
+	<script>	
+		function getProviders(){
+			$.ajax({
+				method:"GET",
+				url:"/o/oauth2/provider/",
+				statusCode: {
+					404: function(){
+							$("#oidcselect").html("<option> Failed to load Provider data </option>");
+						},
+					200: function(data){
+							var string="";
+							$.each(data,function(i){
+								string += '<option value="'+data[i].config+'">'+data[i].title+'</option>'
+							});
+							$("#oidcselect").html(string);
+						}
+					}
 				});
 			}
-	</script>
-	<script>
+		(function($){
+			$.fn.serializeObject = function()
+			{
+			    var o = {};
+			    var a = this.serializeArray();
+			    $.each(a, function() {
+			        if (o[this.name] !== undefined) {
+			            if (!o[this.name].push) {
+			                o[this.name] = [o[this.name]];
+			            }
+			            o[this.name].push(this.value || '');
+			        } else {
+			            o[this.name] = this.value || '';
+			        }
+			    });
+			    return o;
+			};
+		})(jQuery);
+		
+		function postProvider(){
+			var postData = $("#oidcForm").serializeObject();
+			$.ajax({
+				type:"POST",
+				url:"/o/oauth2/provider/",
+				statusCode: {
+					409: function(data){
+							$("#oidcinfo").html("The provider already exists as "+data.name+".");
+						},
+					200: function(data){
+							$("#oidcinfo").html("Provider added successfully");
+							getProviders();
+						}
+				},
+				dataType:"json",
+				data: JSON.stringify(postData)
+			});
+		}
 		$(document).ready(function(){
 				$("body").on("click","#formToggle",function(){
 					if( $("#oidcForm").css("display") == "none"){
@@ -232,9 +232,17 @@
 					$("#clientId,#clientSecret").prop("disabled", cb);
 				});
 				
-				getProviders();
+				$("body").on("click","#gobutton",function(){
+					window.location.assign("/o/oauth2/request?discovery="+document.getElementById("oidcselect").value);	
+				});
+				
 			});
-	
+		$(window).load(function(){
+					var myvar;
+					
+					myvar = setTimeout(getProviders(), 3000);
+				});
+		
 	</script>
 </body>
 </html>
