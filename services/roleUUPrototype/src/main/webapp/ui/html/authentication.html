@@ -45,16 +45,14 @@
 		<h2>Sign in using&hellip;</h2>
 		
 		<p class="messageOAuth2"></p>
-		<a href="/o/oauth2/request?discovery=https://api.learning-layers.eu/o/oauth2/.well-known/openid-configuration>
-		<img src="/s/images/logo.png" width="15px" height="15px">Learning Layers</h3></a> 
-    	<a href="/o/oauth2/request?discovery=https://accounts.google.com/.well-known/openid-configuration>
-    	<img src="/s/images/googleicon.png" width="15px" height="15px">Google</h3></a> 
+    	<a href="/o/oauth2/request?discovery=https://accounts.google.com/.well-known/openid-configuration&client_id=263505441471-qh264egece36h6aclabdf27cic8cl505.apps.googleusercontent.com&client_secret=wZfRO-eURr_hmeKL1F1nZFm1&return=${returnUriEnc}"><h3>
+		<img src="/s/images/googleicon.png" width="15px" height="15px">Google</h3></a> 
 		
 		<div>
 		<select id="oidcselect">
 			<option> Loading provider ... </option>
 		</select>
-		<a><button> Go </button></a>
+		<button> Go </button>
 		</div>
 		<div>
 		<br>
@@ -66,7 +64,7 @@
 	    			<input type="text" id="oidcName" name="name" placeholder="Name" />
 	    		</div>
 	    		<br>
-    			<input type="checkbox" id="oidcDynamic" name="regdyn"> Attempt to dynamically register client
+    			<input type="checkbox" id="oidcDynamic" name="dynreg"> Try to dynamically register client (only check if you're sure there is no ROLE-SDK client registered on your provider yet)
     			<br>
     			<br>
     			<div>
@@ -75,7 +73,6 @@
     			</div>
     			<br>
     			<input type="button" id="oidcSubmit" value="Submit" />
-    			<p id="oidcinfo" style="display:hidden" />
     		</form>
     	</div>
     </script>
@@ -174,9 +171,6 @@
 									string += '<option value="'+data[i].config+'">'+data[i].name+'</option>'
 								});
 								$("#oidcselect").html(string);
-								if(provider !== undefined){
-									$("#oidcselect").val(provider);
-								}
 							}
 						}
 					});
@@ -207,7 +201,7 @@
 					url:"/o/oauth2/provider/",
 					statusCode: {
 						409: function(data){
-								$("#oidcinfo").html("The provider already exists as "+data.name+".");
+								$("#oidcwarning").html("The provider already exists as "+data.name+".");
 							},
 						201: function(data){
 								$("#oidcinfo").html("Provider added successfully");
@@ -231,7 +225,6 @@
 				});
 				$("body").on("click","#oidcSubmit",function(){
 					postProvider();
-					$("#oidcForm").prop("disabled",true);
 				});
 				
 				$("body").on("click","#oidcDynamic",function(){
@@ -239,15 +232,9 @@
 					$("#clientId,#clientSecret").prop("disabled", cb);
 				});
 				
-				$("body").on("click","#gobutton",function(){
-					var config = document.getElementById("oidcsubmit").value;
-					window.location("/o/oauth2/request?discovery="+config);
-				});
-				
-			});
-		$(window).ready(function(){
 				getProviders();
-				});
+			});
+	
 	</script>
 </body>
 </html>

@@ -353,6 +353,7 @@ public class OAuth2Endpoints {
 			else{
 				return Response.notModified().build();
 			}
+			log.info(data);
 			obj = (JSONObject) JSONValue.parse(data);
 			String config;
 			String name;
