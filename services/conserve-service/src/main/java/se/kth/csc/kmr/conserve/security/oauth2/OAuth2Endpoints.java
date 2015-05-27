@@ -133,16 +133,37 @@ public class OAuth2Endpoints {
 	@GET
 	@Path("request")
 	public Response getRequest(@QueryParam("discovery") String openIdUri,
-			@QueryParam("client_id") String client_id,
-			@QueryParam("client_secret") String client_secret,
 			@QueryParam("return") String return_url) {
 		try {
 
 
 			String discoveryUri = openIdUri;
 
-				 
+				String client_id = "";
+				String client_secret = "";
 				DefaultHttpClient httpClient = new DefaultHttpClient();
+				Concept provider = store().in(oidcContext).sub(oidcPredicate).get(openIdUri);
+				if(provider == null) return Response.status(404).build();
+				List<Content> contents = store.getContents(provider.getUuid());
+				for(Content x : contents){
+					if(x.getType()=="application/json"){
+						Blob asdf = x.getData();
+						byte[] bdata = asdf.getBytes(1, (int) asdf.length());
+						String z = new String(bdata);
+						JSONObject buffer = (JSONObject) JSONValue.parse(z);
+						if(buffer.get("") != null){
+							JSONObject tmp = (JSONObject) buffer.get("");
+							JSONArray secret = (JSONArray) tmp.get("http://purl.org/openapp/secret");
+							JSONArray id = (JSONArray) tmp.get("http://purl.org/openapp/app");
+							tmp = (JSONObject) secret.get(0);
+							client_secret = (String) tmp.get("value");
+							tmp = (JSONObject) id.get(0);
+							client_id = (String) tmp.get("value");
+						}
+					}
+				}
+				if(client_id.equals("") || client_secret.equals("")) return Response.status(404).build();
+
 				
 				HttpGet discovery = new HttpGet(openIdUri);
 				HttpResponse response = httpClient.execute(discovery);
